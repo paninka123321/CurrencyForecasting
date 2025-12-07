@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    env_file: ./.env.example
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+    command: ["/bin/sh", "-c", "python manage.py migrate --noinput && gunicorn proj.wsgi:application --bind 0.0.0.0:8000"]
+
+  worker:
+    build:
+      context: ./backend
+    env_file: ./.env.example
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+    command: ["/bin/sh", "-c", "python fetcher/fetch_rates.py"]
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/usr/src/app
+    command: ["/bin/sh","-c","npm install && npm start"]
+
+  # airflow:
+  #   image: apache/airflow:2.6.4
+  #   restart: unless-stopped
+  #   environment:
+  #     - AIRFLOW__CORE__LOAD_EXAMPLES=False
+  #   # placeholder: won't be fully configured here
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - ./airflow/dags:/opt/airflow/dags
+
+  # mlmodel:
+  #   image: python:3.11-slim
+  #   restart: "no"
+  #   volumes:
+  #     - ./ml:/ml
+  #   command: ["/bin/sh","-c","sleep infinity"]
+
+volumes:
+  pgdata:
+
+networks: {}

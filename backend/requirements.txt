@@ -1,0 +1,11 @@
+gunicorn
+Django>=4.2
+psycopg2-binary
+gunicorn
+SQLAlchemy>=1.4
+alembic
+requests
+python-dotenv
+python-dateutil
+pandas
+yfinance
