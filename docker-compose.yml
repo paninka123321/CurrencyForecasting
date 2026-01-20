@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15
@@ -12,13 +10,34 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ./backend
+    env_file: ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+    restart: "no"
+    command: ["/bin/sh", "-lc", "alembic -c /app/alembic.ini upgrade head && python manage.py migrate --noinput"]
 
   backend:
     build:
       context: ./backend
-    env_file: ./.env.example
+    env_file: ./.env
     depends_on:
-      - db
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     volumes:
@@ -26,20 +45,21 @@ services:
     working_dir: /app
     environment:
       - PYTHONPATH=/app
-    command: ["/bin/sh", "-c", "python manage.py migrate --noinput && gunicorn proj.wsgi:application --bind 0.0.0.0:8000"]
+    command: ["gunicorn", "proj.wsgi:application", "--bind", "0.0.0.0:8000"]
 
-  worker:
-    build:
-      context: ./backend
-    env_file: ./.env.example
-    depends_on:
-      - db
-    volumes:
-      - ./backend:/app
-    working_dir: /app
-    environment:
-      - PYTHONPATH=/app
-    command: ["/bin/sh", "-c", "python fetcher/fetch_rates.py"]
+  # worker:
+  #   build:
+  #     context: ./backend
+  #   env_file: ./.env
+  #   depends_on:
+  #     migrate:
+  #       condition: service_completed_successfully
+  #   volumes:
+  #     - ./backend:/app
+  #   working_dir: /app
+  #   environment:
+  #     - PYTHONPATH=/app
+  #   command: ["/bin/sh", "-c", "python fetcher/fetch_rates.py"]
 
   frontend:
     build:
@@ -50,16 +70,86 @@ services:
       - ./frontend:/usr/src/app
     command: ["/bin/sh","-c","npm install && npm start"]
 
-  # airflow:
-  #   image: apache/airflow:2.6.4
-  #   restart: unless-stopped
-  #   environment:
-  #     - AIRFLOW__CORE__LOAD_EXAMPLES=False
-  #   # placeholder: won't be fully configured here
-  #   ports:
-  #     - "8080:8080"
-  #   volumes:
-  #     - ./airflow/dags:/opt/airflow/dags
+  airflow-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5433:5432"
+    volumes:
+      - airflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    image: apache/airflow:2.9.3
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _PIP_ADDITIONAL_REQUIREMENTS: "yfinance pandas sqlalchemy psycopg2-binary python-dotenv"
+      FOREX_DATABASE_URL: postgresql+psycopg2://forex:forex@db:5432/forexdb
+      PYTHONPATH: /opt/airflow/app
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./backend:/opt/airflow/app
+      - ./.env:/opt/airflow/app/.env
+    command: ["bash", "-lc", "airflow db init && airflow users create --username airflow --password airflow --firstname Admin --lastname User --role Admin --email admin@example.com"]
+
+  airflow-webserver:
+    image: apache/airflow:2.9.3
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    env_file: ./.env
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _PIP_ADDITIONAL_REQUIREMENTS: "yfinance pandas sqlalchemy psycopg2-binary python-dotenv"
+      FOREX_DATABASE_URL: postgresql+psycopg2://forex:forex@db:5432/forexdb
+      PYTHONPATH: /opt/airflow/app
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./backend:/opt/airflow/app
+      - ./.env:/opt/airflow/app/.env
+    command: ["bash", "-lc", "airflow webserver"]
+    
+  
+  airflow-scheduler:
+    image: apache/airflow:2.9.3
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    env_file: ./.env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _PIP_ADDITIONAL_REQUIREMENTS: "yfinance pandas sqlalchemy psycopg2-binary python-dotenv"
+      FOREX_DATABASE_URL: postgresql+psycopg2://forex:forex@db:5432/forexdb
+      PYTHONPATH: /opt/airflow/app
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./backend:/opt/airflow/app
+      - ./.env:/opt/airflow/app/.env
+    command: ["bash", "-lc", "airflow scheduler"]
 
   # mlmodel:
   #   image: python:3.11-slim
@@ -70,5 +160,6 @@ services:
 
 volumes:
   pgdata:
+  airflow_pgdata:
 
 networks: {}

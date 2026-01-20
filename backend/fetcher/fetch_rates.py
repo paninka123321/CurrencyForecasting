@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+import argparse
 from pathlib import Path
 from dotenv import load_dotenv
 import yfinance as yf
@@ -10,17 +11,16 @@ from sql_app.models import historical_currency
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / '.env.example')
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / '.env')
 
 TICKER_EUR = os.getenv('TICKER_EUR', 'EURPLN=X')
 TICKER_USD = os.getenv('TICKER_USD', 'USDPLN=X')
 
-
-def fetch_hourly_yfinance(ticker):
+def fetch_yfinance(ticker: str, period: str, interval: str):
     t = yf.Ticker(ticker)
-    
-    # get 1 year hourly history
-    df = t.history(period='1y', interval='1h')
+
+    # get history
+    df = t.history(period=period, interval=interval)
     if df.empty:
         return pd.DataFrame()
     # ensure UTC naive timestamps
@@ -32,50 +32,80 @@ def fetch_hourly_yfinance(ticker):
     df = df[['Close']].rename(columns={'Close': ticker})
     return df
 
-
 def prepare_rows(eur_df, usd_df):
     df = pd.concat([eur_df, usd_df], axis=1)
     df = df.dropna(how='all')
-    df = df.reset_index().rename(columns={'index': 'date'})
+    df = df.reset_index()
+
+    if 'date' not in df.columns:
+        first_col = df.columns[0]
+        if first_col != 'date':
+            df = df.rename(columns={first_col: 'date'})
+
     rows = []
     for _, r in df.iterrows():
-        dt = r['index'] if 'index' in r else r['Date'] if 'Date' in r else r['date']
-        # ensure dt is a python datetime
         date = pd.to_datetime(r['date']).to_pydatetime()
+
         eurv = r.get(TICKER_EUR)
         usdv = r.get(TICKER_USD)
+
         eur = Decimal(str(eurv)) if pd.notna(eurv) else None
         usd = Decimal(str(usdv)) if pd.notna(usdv) else None
+
         rows.append({'date': date, 'eurpln': eur, 'usdpln': usd})
     return rows
 
+
+# def upsert_rows(rows):
+#     if not rows:
+#         print('No rows to insert')
+#         return
+#     conn = engine.connect()
+#     try:
+#         stmt = pg_insert(historical_currency).values(rows)
+#         stmt = stmt.on_conflict_do_update(
+#             index_elements=['date'],
+#             set_={'eurpln': stmt.excluded.eurpln, 'usdpln': stmt.excluded.usdpln}
+#         )
+#         conn.execute(stmt)
+#         conn.commit()
+#     finally:
+#         conn.close()
 
 def upsert_rows(rows):
     if not rows:
         print('No rows to insert')
         return
-    # ensure table exists
-    try:
-        historical_currency.metadata.create_all(engine)
-    except Exception:
-        pass
-    conn = engine.connect()
-    try:
+
+    with engine.begin() as conn:
         stmt = pg_insert(historical_currency).values(rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=['date'],
             set_={'eurpln': stmt.excluded.eurpln, 'usdpln': stmt.excluded.usdpln}
         )
         conn.execute(stmt)
-        conn.commit()
-    finally:
-        conn.close()
 
+def parse_args():
+    p = argparse.ArgumentParser(description="Fetch FX rates from yfinance and upsert into Postgres.")
+    p.add_argument(
+        "--period",
+        default=os.getenv("YF_PERIOD", "7d"),
+        help="yfinance period (e.g. 1d, 5d, 7d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max). Default: 7d",
+    )
+    p.add_argument(
+        "--interval",
+        default=os.getenv("YF_INTERVAL", "1h"),
+        help="yfinance interval (e.g. 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo). Default: 1h",
+    )
+    return p.parse_args()
 
 if __name__ == '__main__':
-    print('Fetching hourly history via yfinance...')
-    eur_df = fetch_hourly_yfinance(TICKER_EUR)
-    usd_df = fetch_hourly_yfinance(TICKER_USD)
+    args = parse_args()
+
+    print(f'Fetching history via yfinance... period={args.period} interval={args.interval}')
+
+    eur_df = fetch_yfinance(TICKER_EUR, period=args.period, interval=args.interval)
+    usd_df = fetch_yfinance(TICKER_USD, period=args.period, interval=args.interval)
     if eur_df.empty and usd_df.empty:
         print('No data fetched from yfinance')
     else:
