@@ -16,6 +16,22 @@ services:
       timeout: 5s
       retries: 10
 
+  makemigrations:
+    build:
+      context: ./backend
+    env_file: ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+    restart: "no"
+    entrypoint: ["/bin/sh", "-lc"]
+    command: "alembic -c /app/alembic.ini revision --autogenerate -m 'initial'"
+
   migrate:
     build:
       context: ./backend
