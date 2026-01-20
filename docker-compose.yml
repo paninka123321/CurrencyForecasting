@@ -83,7 +83,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
       interval: 2s
-      timeout: 5s
+      timeout: 10s
       retries: 10
 
   airflow-init:
@@ -95,7 +95,7 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      _PIP_ADDITIONAL_REQUIREMENTS: "yfinance pandas sqlalchemy psycopg2-binary python-dotenv"
+      _PIP_ADDITIONAL_REQUIREMENTS: "yfinance pandas sqlalchemy psycopg2-binary python-dotenv scikit-learn joblib"
       FOREX_DATABASE_URL: postgresql+psycopg2://forex:forex@db:5432/forexdb
       PYTHONPATH: /opt/airflow/app
     volumes:
@@ -115,6 +115,8 @@ services:
     ports:
       - "8080:8080"
     environment:
+      AIRFLOW__WEBSERVER__WEB_SERVER_WORKER_TIMEOUT: 400
+      AIRFLOW__WEBSERVER__WORKERS: 2
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
@@ -151,12 +153,20 @@ services:
       - ./.env:/opt/airflow/app/.env
     command: ["bash", "-lc", "airflow scheduler"]
 
-  # mlmodel:
-  #   image: python:3.11-slim
-  #   restart: "no"
-  #   volumes:
-  #     - ./ml:/ml
-  #   command: ["/bin/sh","-c","sleep infinity"]
+  mlmodel:
+      build:
+        context: ./backend # Możesz użyć tego samego obrazu co backend
+      volumes:
+        - ./ml:/app/ml
+        - ./models:/app/models
+      env_file: ./.env
+      environment:
+        - PYTHONPATH=/app
+        - FOREX_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      command: ["python", "ml/train.py"]
+      depends_on:
+        db:
+          condition: service_healthy
 
 volumes:
   pgdata:
