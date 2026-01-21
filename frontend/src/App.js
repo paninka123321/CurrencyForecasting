@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import './App.css';
 
-// Komponent pomocniczy: Wyświetla aktualny kurs (Kafelek)
+// Helper component: displays the current rate (Tile)
 const RateTile = ({ title, value, date, color }) => (
   <div className="rate-label">
     <h3>{title}</h3>
@@ -16,19 +16,19 @@ const RateTile = ({ title, value, date, color }) => (
   </div>
 );
 
-// Komponent pomocniczy: Tabela z metrykami
+// Helper component: Metrics table
 const MetricsTable = ({ metrics, currentModel }) => {
-  if (!metrics || metrics.length === 0) return <p>Brak danych o modelach</p>;
+  if (!metrics || metrics.length === 0) return <p>No model metrics available</p>;
   
   return (
     <div className="metrics-section">
-      <h4>Skuteczność Modeli (Ostatni trening)</h4>
+  <h4>Model Performance (Latest training)</h4>
       <table className="metrics-table">
         <thead>
           <tr>
-            <th>Model</th>
-            <th>MAE (Błąd)</th>
-            <th>R²</th>
+          <th>Model</th>
+          <th>MAE (Error)</th>
+          <th>R²</th>
           </tr>
         </thead>
         <tbody>
@@ -49,14 +49,14 @@ const MetricsTable = ({ metrics, currentModel }) => {
 };
 
 export default function App() {
-  // Stan aplikacji
+  // App state
   const [dataEur, setDataEur] = useState([]); // Wykres lewy
   const [dataPln, setDataPln] = useState([]); // Wykres prawy
   const [history, setHistory] = useState([]); // Wykres dolny
   const [metricsEur, setMetricsEur] = useState([]);
   const [metricsPln, setMetricsPln] = useState([]);
   
-  // Funkcja pobierająca dane (symulacja endpointów - musisz je mieć w Django)
+  // Data fetching function (calls backend endpoints)
   const fetchData = async () => {
     try {
       // 1. Pobieramy połączone dane historyczne + prognozy dla EUR->PLN
@@ -74,18 +74,18 @@ export default function App() {
       setHistory(resHist.data);
 
     } catch (e) {
-      console.error("Błąd pobierania danych:", e);
+      console.error("Error fetching data:", e);
     }
   };
 
-  // Uruchomienie co minutę
+  // Run every minute
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 60000); // 60 sekund
     return () => clearInterval(interval);
   }, []);
 
-  // Pomocnicze zmienne do wyświetlania aktualnych wartości (ostatni punkt na wykresie)
+  // Helper variables to display latest values (last point on chart)
   const lastEur = dataEur.length > 0 ? dataEur[dataEur.length - 1] : {};
   const lastPln = dataPln.length > 0 ? dataPln[dataPln.length - 1] : {};
 
@@ -93,7 +93,7 @@ export default function App() {
     <div className="dashboard-container">
       <div className="header">
         <h1>Forex AI Dashboard</h1>
-        <p>Aktualizacja na żywo co 1 minutę | Model: {lastEur.model_name || 'Loading...'}</p>
+  <p>Live update every 1 minute | Model: {lastEur.model_name || 'Loading...'}</p>
       </div>
 
       <div className="top-row">
@@ -101,7 +101,7 @@ export default function App() {
         {/* LEWA STRONA: EUR -> PLN (Czerwony) */}
         <div className="card">
           <RateTile 
-            title="Kurs EUR -> PLN" 
+            title="EUR -> PLN Rate" 
             value={lastEur.value} 
             date={lastEur.date} 
             color="#e74c3c" 
@@ -139,7 +139,7 @@ export default function App() {
         {/* PRAWA STRONA: PLN -> EUR (Niebieski) */}
         <div className="card">
           <RateTile 
-            title="Kurs PLN -> EUR" 
+            title="PLN -> EUR Rate" 
             value={lastPln.value} 
             date={lastPln.date} 
             color="#3498db" 
@@ -175,7 +175,7 @@ export default function App() {
 
       {/* DOLNA SEKCJA: Historia Zielona */}
       <div className="bottom-row card">
-        <h3>Pełna Historia (EUR/PLN)</h3>
+  <h3>Full History (EUR/PLN)</h3>
         <div style={{ height: 300 }}>
           <ResponsiveContainer width="100%" height="100%">
              

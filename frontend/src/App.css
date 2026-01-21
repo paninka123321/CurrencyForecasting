@@ -16,7 +16,7 @@ body {
   color: #333;
 }
 
-/* Układ 2 kolumn dla górnej sekcji */
+/* Two-column layout for the top section */
 .top-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -30,7 +30,7 @@ body {
   }
 }
 
-/* Karta (Kafelek) */
+/* Card (Tile) */
 .card {
   background: white;
   border-radius: 8px;
@@ -40,7 +40,7 @@ body {
   flex-direction: column;
 }
 
-/* Górny label z aktualnym kursem */
+/* Top label showing the current rate */
 .rate-label {
   text-align: center;
   margin-bottom: 15px;
@@ -66,7 +66,7 @@ body {
   color: #999;
 }
 
-/* Sekcja metryk pod wykresem */
+/* Metrics section under the chart */
 .metrics-section {
   margin-top: 20px;
   background: #f9f9f9;
@@ -97,7 +97,7 @@ body {
   color: #2ecc71;
 }
 
-/* Sekcja dolna */
-.bottom-row {
+/* Bottom section */
+ .bottom-row {
   margin-top: 30px;
 }

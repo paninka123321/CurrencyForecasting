@@ -11,12 +11,50 @@ historical_currency = Table(
     Column('usdpln', Numeric(18, 8)),
 )
 
-# currency_forecast = Table(
-#     'currency_forecast',
-#     metadata,
-#     Column("id", Integer, primary_key=True),
-#     Column("symbol", String, nullable=False),
-#     Column("forecast_time", DateTime(timezone=True), nullable=False),
-#     Column("predicted_close", Numeric(18, 8), nullable=False),
-#     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
-# )
+# Table storing model metrics (created by the training script / migrations)
+model_metrics = Table(
+    'model_metrics',
+    metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('pair', String(20)),
+    Column('selected_model', String(100)),
+    Column('mae', Numeric(18, 8)),
+    Column('r2', Numeric(18, 8)),
+    Column('trained_at', DateTime, server_default=func.now()),
+)
+
+# Prediction tables used by live_predictor
+predictions_eurpln = Table(
+    'predictions_eurpln',
+    metadata,
+    Column('target_date', DateTime, primary_key=True),
+    Column('execution_date', DateTime),
+    Column('predicted_rate', Numeric(18, 8)),
+    Column('model_name', String(50)),
+    Column('mae', Numeric(18, 8)),
+    Column('r2', Numeric(18, 8)),
+)
+
+# Prediction table for PLN->EUR
+predictions_plneur = Table(
+    'predictions_plneur',
+    metadata,
+    Column('target_date', DateTime, primary_key=True),
+    Column('execution_date', DateTime),
+    Column('predicted_rate', Numeric(18, 8)),
+    Column('model_name', String(50)),
+    Column('mae', Numeric(18, 8)),
+    Column('r2', Numeric(18, 8)),
+)
+
+# Existing forecast table
+currency_forecast = Table(
+    'currency_forecast',
+    metadata,
+    Column('date', DateTime, primary_key=True),
+    Column('eurpln_pred', Numeric(18, 8)),
+    Column('plneur_pred', Numeric(18, 8)),
+    Column('model_version', String(50)),
+    Column('created_at', DateTime, server_default=func.now()),
+)
+

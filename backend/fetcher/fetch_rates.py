@@ -8,8 +8,8 @@ import pandas as pd
 from decimal import Decimal
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-# Upewnij się, że te importy działają w Twojej strukturze
-# Jeśli uruchamiasz to przez Docker, PYTHONPATH powinien to obsłużyć
+# Ensure these imports work in your project layout
+# When running via Docker, PYTHONPATH in the container should handle this
 from sql_app.db import engine
 from sql_app.models import historical_currency
 
@@ -21,7 +21,7 @@ TICKER_USD = os.getenv('TICKER_USD', 'USDPLN=X')
 
 def fetch_yfinance(ticker: str, period: str, interval: str):
     """
-    Pobiera dane z Yahoo Finance i czyści strefy czasowe.
+    Fetch data from Yahoo Finance and normalize timezones.
     """
     print(f"Fetching {ticker} (period={period}, interval={interval})...")
     try:
@@ -32,8 +32,7 @@ def fetch_yfinance(ticker: str, period: str, interval: str):
             print(f"Warning: Empty dataframe for {ticker}")
             return pd.DataFrame()
 
-        # Usunięcie strefy czasowej (konwersja na 'naiwny' UTC),
-        # żeby Postgres nie zgłaszał błędów.
+        # Remove timezone info (convert to naive UTC) so Postgres accepts timestamps.
         if df.index.tz is not None:
             df.index = df.index.tz_convert('UTC').tz_localize(None)
             
@@ -46,23 +45,23 @@ def fetch_yfinance(ticker: str, period: str, interval: str):
 
 def prepare_rows(eur_df, usd_df):
     """
-    Łączy dane EUR i USD w jeden format gotowy do wstawienia do bazy.
+    Merge EUR and USD data into a single format ready for DB insertion.
     """
     if eur_df.empty and usd_df.empty:
         return []
 
-    # Łączymy po indeksie (czasie)
-    # axis=1 oznacza, że łączymy kolumny obok siebie dla tych samych dat
+    # Concatenate on the index (time)
+    # axis=1 means columns are joined side-by-side for the same timestamps
     df = pd.concat([eur_df, usd_df], axis=1)
     
     # Usuwamy wiersze, gdzie obie waluty są NaN
     df = df.dropna(how='all')
     
-    # Wyciągamy datę z indeksu do kolumny
+    # Extract the date from the index into a column
     df = df.reset_index()
     
-    # Upewniamy się, że kolumna z datą nazywa się 'date'
-    # (reset_index domyślnie nazywa ją 'Date' lub 'index')
+    # Ensure the column containing the date is named 'date'
+    # (reset_index may call it 'Date' or 'index')
     if 'Date' in df.columns:
         df = df.rename(columns={'Date': 'date'})
     elif 'index' in df.columns:
@@ -75,13 +74,13 @@ def prepare_rows(eur_df, usd_df):
     rows = []
     for _, r in df.iterrows():
         try:
-            # Konwersja daty na pythonowy datetime
+            # Convert pandas timestamp to native python datetime
             date_val = pd.to_datetime(r['date']).to_pydatetime()
 
             eurv = r.get(TICKER_EUR)
             usdv = r.get(TICKER_USD)
 
-            # Konwersja na Decimal (bezpieczniej dla walut)
+            # Convert to Decimal (safer for currency values)
             eur = Decimal(str(eurv)) if pd.notna(eurv) else None
             usd = Decimal(str(usdv)) if pd.notna(usdv) else None
             
@@ -96,13 +95,13 @@ def prepare_rows(eur_df, usd_df):
 
 def upsert_rows(rows):
     """
-    Wstawia wiersze do bazy. Jeśli data istnieje -> aktualizuje kursy.
+    Insert rows into the DB. If a row for the date exists -> update rates.
     """
     if not rows:
         print('No rows to insert')
         return
 
-    # Używamy context managera (with engine.begin), który sam robi commit lub rollback
+    # Use a context manager (with engine.begin) which commits or rollbacks automatically
     try:
         with engine.begin() as conn:
             stmt = pg_insert(historical_currency).values(rows)
