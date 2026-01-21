@@ -5,6 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, text
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, r2_score
 from airflow.decorators import dag, task
 from fetcher.fetch_rates import fetch_yfinance, upsert_rows, prepare_rows
 
@@ -68,26 +69,35 @@ def forex_pipeline():
             temp_df = pd.DataFrame({name: series})
             for i in range(1, 4):
                 temp_df[f'lag_{i}'] = temp_df[name].shift(i)
-            
+
             temp_df = temp_df.dropna()
             X = temp_df[['lag_1', 'lag_2', 'lag_3']]
             y = temp_df[name]
-            
+
             # Trening
             model = LinearRegression().fit(X, y)
-            
+
+            # Ocena na zbiorze treningowym (szybka metryka)
+            preds_train = model.predict(X)
+            mae = float(mean_absolute_error(y, preds_train))
+            r2 = float(r2_score(y, preds_train))
+
             # Predykcja na podstawie ostatnich 3 znanych wartości
             last_values = series.iloc[-3:].values[::-1].reshape(1, -1)
-            return float(model.predict(last_values)[0])
+            prediction = float(model.predict(last_values)[0])
+
+            model_version = "linear_lag3_v1"
+            return prediction, mae, r2, model_version
 
         # 3. Wykonanie dwóch niezależnych predykcji
-        pred_eurpln = get_prediction(df['eurpln'], 'eurpln')
-        pred_plneur = get_prediction(df['plneur'], 'plneur')
+    pred_eurpln, mae_eur, r2_eur, ver_eur = get_prediction(df['eurpln'], 'eurpln')
+    pred_plneur, mae_pln, r2_pln, ver_pln = get_prediction(df['plneur'], 'plneur')
         
         next_date = df['date'].iloc[-1] + timedelta(minutes=15)
         
         # 4. Zapis do bazy
         with engine.begin() as conn:
+            # Tabela z prognozami (dla kompatybilności z poprzednimi modułami)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS currency_forecast (
                     date TIMESTAMP PRIMARY KEY,
@@ -97,7 +107,7 @@ def forex_pipeline():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
-            
+
             conn.execute(text("""
                 INSERT INTO currency_forecast (date, eurpln_pred, plneur_pred, model_version)
                 VALUES (:date, :eur, :pln, :ver)
@@ -109,6 +119,40 @@ def forex_pipeline():
                 "eur": pred_eurpln, 
                 "pln": pred_plneur, 
                 "ver": "dual_linear_v1"
+            })
+
+            # Tabela z metrykami modeli (jeśli nie istnieje)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS model_metrics (
+                    id SERIAL PRIMARY KEY,
+                    pair VARCHAR(20),
+                    selected_model VARCHAR(100),
+                    mae NUMERIC(18,8),
+                    r2 NUMERIC(18,8),
+                    trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+
+            # Zapis metryk dla EURPLN
+            conn.execute(text("""
+                INSERT INTO model_metrics (pair, selected_model, mae, r2, trained_at)
+                VALUES (:pair, :model, :mae, :r2, NOW())
+            """), {
+                "pair": 'EURPLN',
+                "model": ver_eur,
+                "mae": mae_eur,
+                "r2": r2_eur
+            })
+
+            # Zapis metryk dla PLNEUR
+            conn.execute(text("""
+                INSERT INTO model_metrics (pair, selected_model, mae, r2, trained_at)
+                VALUES (:pair, :model, :mae, :r2, NOW())
+            """), {
+                "pair": 'PLNEUR',
+                "model": ver_pln,
+                "mae": mae_pln,
+                "r2": r2_pln
             })
         
         return f"Prognoza na {next_date}: EURPLN={pred_eurpln:.4f}, PLNEUR={pred_plneur:.4f}"
