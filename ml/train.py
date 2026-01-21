@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 import joblib
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -39,6 +39,7 @@ def train_and_evaluate(series, name):
     best_mae = float('inf')
     best_model = None
     best_model_name = ""
+    best_r2 = None
 
     # 4. Pętla treningowa
     for m_name, model in models.items():
@@ -54,13 +55,15 @@ def train_and_evaluate(series, name):
             best_mae = mae
             best_model = model
             best_model_name = m_name
+            best_r2 = r2
 
     print(f" >>> ZWYCIĘZCA dla {name}: {best_model_name} (MAE: {best_mae:.6f})")
     
     # Opcjonalnie: Dotrenowanie zwycięzcy na pełnych danych przed zapisem
     best_model.fit(X, y)
     
-    return best_model, best_model_name
+    # Zwracamy również metryki (MAE, R2) obliczone na zbiorze testowym dla zwycięzcy
+    return best_model, best_model_name, best_mae, best_r2
 
 def main():
     try:
@@ -75,13 +78,49 @@ def main():
         df['plneur'] = 1 / df['eurpln']
         
         # Trening dla obu kierunków
-        model_eur, name_eur = train_and_evaluate(df['eurpln'], 'eurpln')
-        model_pln, name_pln = train_and_evaluate(df['plneur'], 'plneur')
+    model_eur, name_eur, mae_eur, r2_eur = train_and_evaluate(df['eurpln'], 'eurpln')
+    model_pln, name_pln, mae_pln, r2_pln = train_and_evaluate(df['plneur'], 'plneur')
 
         # Zapis modeli do plików
         os.makedirs('models', exist_ok=True)
         joblib.dump(model_eur, 'models/best_eurpln_model.joblib')
         joblib.dump(model_pln, 'models/best_plneur_model.joblib')
+        
+        # Zapis metryk do bazy w tabeli model_metrics
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS model_metrics (
+                        id SERIAL PRIMARY KEY,
+                        pair VARCHAR(20),
+                        selected_model VARCHAR(100),
+                        mae NUMERIC(18,8),
+                        r2 NUMERIC(18,8),
+                        trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+
+                conn.execute(text("""
+                    INSERT INTO model_metrics (pair, selected_model, mae, r2, trained_at)
+                    VALUES (:pair, :model, :mae, :r2, NOW())
+                """), {
+                    "pair": 'EURPLN',
+                    "model": name_eur,
+                    "mae": float(mae_eur),
+                    "r2": float(r2_eur)
+                })
+
+                conn.execute(text("""
+                    INSERT INTO model_metrics (pair, selected_model, mae, r2, trained_at)
+                    VALUES (:pair, :model, :mae, :r2, NOW())
+                """), {
+                    "pair": 'PLNEUR',
+                    "model": name_pln,
+                    "mae": float(mae_pln),
+                    "r2": float(r2_pln)
+                })
+        except Exception as e:
+            print(f"Błąd zapisu metryk do bazy: {e}")
         
         print(f"\nModele zapisane w folderze 'models/'.")
         print(f"EUR->PLN: {name_eur}")
