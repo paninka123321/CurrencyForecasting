@@ -1,0 +1,16 @@
+FROM apache/airflow:2.9.3
+
+# Instalujemy paczki systemowe i Pythona
+USER root
+RUN apt-get update && apt-get install -y build-essential libpq-dev && apt-get clean
+
+USER airflow
+RUN pip install --no-cache-dir \
+    yfinance \
+    pandas \
+    scikit-learn \
+    sqlalchemy \
+    psycopg2-binary \
+    multitasking \
+    frozendict \
+    curl_cffi

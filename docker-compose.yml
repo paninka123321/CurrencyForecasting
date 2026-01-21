@@ -12,9 +12,27 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 2s
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 5
+
+  # Backend (Django API)
+  backend:
+    build:
+      context: ./backend
+    container_name: backend
+    env_file: ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+    command: ["gunicorn", "proj.wsgi:application", "--bind", "0.0.0.0:8000"]
 
   migrate:
     build:
@@ -31,36 +49,7 @@ services:
     restart: "no"
     command: ["/bin/sh", "-lc", "alembic -c /app/alembic.ini upgrade head && python manage.py migrate --noinput"]
 
-  backend:
-    build:
-      context: ./backend
-    env_file: ./.env
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend:/app
-    working_dir: /app
-    environment:
-      - PYTHONPATH=/app
-    command: ["gunicorn", "proj.wsgi:application", "--bind", "0.0.0.0:8000"]
-
-  # worker:
-  #   build:
-  #     context: ./backend
-  #   env_file: ./.env
-  #   depends_on:
-  #     migrate:
-  #       condition: service_completed_successfully
-  #   volumes:
-  #     - ./backend:/app
-  #   working_dir: /app
-  #   environment:
-  #     - PYTHONPATH=/app
-  #   command: ["/bin/sh", "-c", "python fetcher/fetch_rates.py"]
-
+  # Frontend (React)
   frontend:
     build:
       context: ./frontend
@@ -69,7 +58,28 @@ services:
     volumes:
       - ./frontend:/usr/src/app
     command: ["/bin/sh","-c","npm install && npm start"]
+    depends_on:
+      - backend
 
+  # --- NOWOŚĆ: Serce Systemu (Live Predictor) ---
+  predictor:
+    build:
+      context: ./backend # Używa tego samego środowiska co backend
+    env_file: ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app  # Widzi modele zapisane przez Airflow
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+      # ZMIANA: Dodajemy pełny link do bazy, żeby predictor mógł zapisywać wyniki
+      - FOREX_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "ml/live_predictor.py"]
+    restart: always
+
+  # --- AIRFLOW ---
   airflow-db:
     image: postgres:15
     environment:
@@ -82,32 +92,31 @@ services:
       - airflow_pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
-      interval: 2s
-      timeout: 10s
-      retries: 10
+      interval: 5s
+      retries: 5
 
   airflow-init:
-    image: apache/airflow:2.9.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       airflow-db:
         condition: service_healthy
+    env_file: ./.env
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      _PIP_ADDITIONAL_REQUIREMENTS: "yfinance pandas sqlalchemy psycopg2-binary python-dotenv scikit-learn joblib"
-      FOREX_DATABASE_URL: postgresql+psycopg2://forex:forex@db:5432/forexdb
-      PYTHONPATH: /opt/airflow/app
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./backend:/opt/airflow/app
-      - ./.env:/opt/airflow/app/.env
-    command: ["bash", "-lc", "airflow db init && airflow users create --username airflow --password airflow --firstname Admin --lastname User --role Admin --email admin@example.com"]
+    command: >
+      bash -c "airflow db init && 
+      airflow users create --username airflow --password airflow --firstname Admin --lastname User --role Admin --email admin@example.com"
 
   airflow-webserver:
-    image: apache/airflow:2.9.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -115,14 +124,11 @@ services:
     ports:
       - "8080:8080"
     environment:
-      AIRFLOW__WEBSERVER__WEB_SERVER_WORKER_TIMEOUT: 400
-      AIRFLOW__WEBSERVER__WORKERS: 2
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      _PIP_ADDITIONAL_REQUIREMENTS: "yfinance pandas sqlalchemy psycopg2-binary python-dotenv"
-      FOREX_DATABASE_URL: postgresql+psycopg2://forex:forex@db:5432/forexdb
       PYTHONPATH: /opt/airflow/app
+      # ZMIANA: Dodajemy to też tutaj, żeby Webserver nie zgłaszał błędu "Broken DAG" przy parsowaniu
+      FOREX_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -130,10 +136,11 @@ services:
       - ./backend:/opt/airflow/app
       - ./.env:/opt/airflow/app/.env
     command: ["bash", "-lc", "airflow webserver"]
-    
-  
+
   airflow-scheduler:
-    image: apache/airflow:2.9.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -141,10 +148,9 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      _PIP_ADDITIONAL_REQUIREMENTS: "yfinance pandas sqlalchemy psycopg2-binary python-dotenv"
-      FOREX_DATABASE_URL: postgresql+psycopg2://forex:forex@db:5432/forexdb
       PYTHONPATH: /opt/airflow/app
+      # To już miałaś dobrze:
+      FOREX_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -153,23 +159,6 @@ services:
       - ./.env:/opt/airflow/app/.env
     command: ["bash", "-lc", "airflow scheduler"]
 
-  mlmodel:
-      build:
-        context: ./backend # Możesz użyć tego samego obrazu co backend
-      volumes:
-        - ./ml:/app/ml
-        - ./models:/app/models
-      env_file: ./.env
-      environment:
-        - PYTHONPATH=/app
-        - FOREX_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      command: ["python", "ml/train.py"]
-      depends_on:
-        db:
-          condition: service_healthy
-
 volumes:
   pgdata:
   airflow_pgdata:
-
-networks: {}
