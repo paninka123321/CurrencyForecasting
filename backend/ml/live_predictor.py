@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 # Konfiguracja
 PATH_EUR = "/app/models/live_package_eurpln.joblib"
 PATH_PLN = "/app/models/live_package_plneur.joblib"
-DB_URL = os.getenv("FOREX_DATABASE_URL", "postgresql://forex:forexpass@forexdb:5432/forexdb")
+DB_URL = os.getenv("FOREX_DATABASE_URL")
 TICKER = "EURPLN=X"
 
 def init_tables(engine):
