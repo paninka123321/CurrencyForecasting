@@ -38,12 +38,9 @@ Step 5: Fetch initial data
 After startup, the database is empty. To avoid an empty dashboard, fetch historical data (e.g. last 30 days):
 
 ```Bash
-docker compose up -d backend frontend predictor airflow-webserver airflow-scheduler
+docker compose run --rm backend sh -lc "cd /app && python fetcher/fetch_rates.py --period 30d --interval 15m"
 ```
 
 Quick verification
 If you want to check whether data has actually been inserted into the database, use:
 
-```Bash
-docker compose up -d backend frontend predictor airflow-webserver airflow-scheduler
-```

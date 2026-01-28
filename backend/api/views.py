@@ -69,14 +69,12 @@ def get_combined_chart_data(request, direction):
         
         # C. POBIERANIE METRYK (Ostatni trening dla danej pary)
         # Pobieramy wszystkie modele z ostatniego treningu
-        sql_metrics = """
-            SELECT selected_model as model_name, mae, r2, trained_at
-            FROM model_metrics
-            WHERE pair = %s
-            AND trained_at = (SELECT MAX(trained_at) FROM model_metrics WHERE pair = %s)
-            ORDER BY mae ASC
+        sql_metrics = f"""
+            SELECT DISTINCT ON (model_name) model_name, mae, r2, target_date as trained_at
+            FROM {pred_table}
+            ORDER BY model_name, target_date DESC
         """
-        cursor.execute(sql_metrics, [pair_name, pair_name])
+        cursor.execute(sql_metrics) 
         metrics_data = dictfetchall(cursor)
 
     # Łączymy dane do wykresu i sortujemy

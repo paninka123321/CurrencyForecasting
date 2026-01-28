@@ -42,7 +42,6 @@ const MetricsTable = ({ metrics, currentModel }) => {
   );
 };
 
-// Component for matpotlotlib
 const AdvancedPlotCard = ({ title, plotBase64, loading }) => (
   <div className="card advanced-card">
     <h3>{title}</h3>
@@ -77,7 +76,11 @@ const AdvancedPlotCard = ({ title, plotBase64, loading }) => (
 // --- MAIN APP ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('linear');
-  // States
+  
+  // --- LIVE CLOCK STATE ---
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Data States
   const [dataEur, setDataEur] = useState([]);
   const [dataPln, setDataPln] = useState([]);
   const [history, setHistory] = useState([]);
@@ -85,6 +88,14 @@ export default function App() {
   const [metricsPln, setMetricsPln] = useState([]);
   const [advPlots, setAdvPlots] = useState({ eur: null, usd: null });
   const [advLoading, setAdvLoading] = useState(false);
+
+  // --- EFFECT FOR LIVE CLOCK ---
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer); // Cleanup on unmount
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -103,7 +114,6 @@ export default function App() {
     }
   };
 
-  // Getter for images
   const fetchAdvancedPlots = async () => {
     setAdvLoading(true);
     try {
@@ -135,8 +145,23 @@ export default function App() {
   return (
     <div className="dashboard-container">
       <div className="header">
-        <h1>Forex AI Dashboard</h1>
-        <p>Live update every 1 minute | Model: {lastEur.model_name || 'Loading...'}</p>
+        <div className="header-main">
+          <div>
+            <h1>Forex AI Dashboard</h1>
+            <p>Live update every 1 minute | Model: {lastEur.model_name || 'Loading...'}</p>
+          </div>
+          
+          {/* --- LIVE CLOCK DISPLAY --- */}
+          <div className="live-clock-container">
+            <div className="clock-label">WARSAW TIME</div>
+            <div className="clock-time">
+              {currentTime.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </div>
+            <div className="clock-date">
+              {currentTime.toLocaleDateString('pl-PL', { day: '2-digit', month: 'long', year: 'numeric' })}
+            </div>
+          </div>
+        </div>
         
         <div className="tab-navigation">
           <button 
@@ -155,7 +180,6 @@ export default function App() {
       </div>
 
       {activeTab === 'linear' ? (
-        /* TAB 1 */
         <div className="tab-content fade-in">
           <div className="top-row">
             <div className="card">
@@ -217,7 +241,6 @@ export default function App() {
           </div>
         </div>
       ) : (
-        /* TAB 2 */
         <div className="tab-content fade-in">
           <div className="advanced-container">
             <div style={{ marginBottom: '15px', display: 'flex', justifyContent: 'flex-end' }}>
@@ -226,7 +249,6 @@ export default function App() {
               </button>
             </div>
             
-            {/* Grid with 2 charts */}
             <div className="advanced-grid">
               <AdvancedPlotCard 
                 title="EUR/PLN" 

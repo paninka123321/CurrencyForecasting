@@ -25,6 +25,9 @@ TEMPLATES = []
 
 WSGI_APPLICATION = 'proj.wsgi.application'
 
+TIME_ZONE = 'Europe/Warsaw'
+USE_TZ = True
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
