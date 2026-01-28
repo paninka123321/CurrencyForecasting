@@ -61,20 +61,19 @@ services:
     depends_on:
       - backend
 
-  # --- NOWOŚĆ: Serce Systemu (Live Predictor) ---
+  # --- (Live Predictor) ---
   predictor:
     build:
-      context: ./backend # Używa tego samego środowiska co backend
+      context: ./backend 
     env_file: ./.env
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - ./backend:/app  # Widzi modele zapisane przez Airflow
+      - ./backend:/app 
     working_dir: /app
     environment:
       - PYTHONPATH=/app
-      # ZMIANA: Dodajemy pełny link do bazy, żeby predictor mógł zapisywać wyniki
       - FOREX_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     command: ["python", "ml/live_predictor.py"]
     restart: always
@@ -127,7 +126,6 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       PYTHONPATH: /opt/airflow/app
-      # ZMIANA: Dodajemy to też tutaj, żeby Webserver nie zgłaszał błędu "Broken DAG" przy parsowaniu
       FOREX_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
@@ -149,7 +147,6 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       PYTHONPATH: /opt/airflow/app
-      # To już miałaś dobrze:
       FOREX_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
       - ./airflow/dags:/opt/airflow/dags

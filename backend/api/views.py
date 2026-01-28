@@ -1,7 +1,25 @@
 from django.http import JsonResponse
 from django.db import connection
 import datetime
+from django.http import JsonResponse
+import traceback
+from .advanced_logic import generate_advanced_plot
 
+def advanced_prediction_view(request):
+    try:
+        plot_eur = generate_advanced_plot('EURPLN')
+        plot_usd = generate_advanced_plot('USDPLN')
+        
+        # generate two charts and send to frontend
+        return JsonResponse({
+            'eurpln': plot_eur,
+            'usdpln': plot_usd
+        })
+    except Exception as e:
+        print("--- ERROR IN ADVANCED PREDICTION ---")
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
+    
 def dictfetchall(cursor):
     """Pomocnicza funkcja: zamienia wyniki SQL na słowniki (JSON-friendly)"""
     columns = [col[0] for col in cursor.description]

@@ -1,13 +1,15 @@
-gunicorn
 Django>=4.2
-psycopg2-binary
 gunicorn
+psycopg2-binary
 SQLAlchemy>=1.4
 alembic
 requests
 python-dotenv
 python-dateutil
 pandas
+numpy
+matplotlib
 yfinance
 joblib
 scikit-learn
+xgboost
