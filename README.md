@@ -13,28 +13,28 @@ First, build the images, then start only the databases so migrations can be appl
 docker compose build
 ```
 
-# Launching databases and airflow
+Step 3: Launching databases and airflow
 
 ```Bash
 docker compose up -d db airflow-db
 docker compose up -d airflow-init
 ```
 
-Step 3: Schema migrations (Alembic)
+Step 4: Schema migrations (Alembic)
 Once the databases are running, we need to create the tables.
 
 ```Bash
 docker compose up migrate
 ```
 
-Step 4: Start the full stack
+Step 5: Start the full stack
 Now bring up all remaining services.
 
 ```Bash
 docker compose up -d backend frontend predictor airflow-webserver airflow-scheduler
 ```
 
-Step 5: Fetch initial data
+Step 6: Fetch initial data
 After startup, the database is empty. To avoid an empty dashboard, fetch historical data (e.g. last 30 days):
 
 ```Bash
