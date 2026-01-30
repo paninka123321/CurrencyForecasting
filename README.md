@@ -13,7 +13,7 @@ First, build the images, then start only the databases so migrations can be appl
 docker compose build
 ```
 
-# Uruchomienie baz danych i inicjalizacja Airflow
+# Launching databases and airflow
 
 ```Bash
 docker compose up -d db airflow-db
